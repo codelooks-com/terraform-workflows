@@ -11,6 +11,10 @@ on:
         description: 'Terraform CLI Version'
         default: 'latest'
         type: string
+    secrets:
+      VPN_SHARED_KEY:
+        description: 'IPsec pre-shared key for the on-prem S2S VPN connection (consumed as TF_VAR_vpn_shared_key at plan time).'
+        required: false
 
 jobs:
   validate:
@@ -69,6 +73,9 @@ jobs:
       ARM_TENANT_ID: "${{ vars.AZURE_TENANT_ID }}"
       ARM_USE_AZUREAD: true
       ARM_USE_OIDC: true
+      # On-prem S2S VPN connection PSK. Empty unless the caller passes the VPN_SHARED_KEY
+      # secret; the platform tfvars resolves it into the connection's shared_key.
+      TF_VAR_vpn_shared_key: "${{ secrets.VPN_SHARED_KEY }}"
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
