@@ -1,8 +1,0 @@
----
-name: resolve-creds
-description: Map caller-provided credential secrets into the environment without clobbering runner-provided creds.
-runs:
-  using: composite
-  steps:
-    - shell: bash
-      run: bash "${GITHUB_ACTION_PATH}/resolve-creds.sh"

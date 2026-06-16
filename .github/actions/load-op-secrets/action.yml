@@ -1,0 +1,34 @@
+---
+name: load-op-secrets
+description: Resolve op:// references into the job environment via 1Password. No-op when no service-account token or no references are provided (ARC cluster runners use pod envFrom instead).
+inputs:
+  op_secrets:
+    description: Multiline list of ENV_NAME=op://vault/item/field references to load.
+    default: ""
+runs:
+  using: composite
+  steps:
+    - name: Stage op references
+      id: stage
+      shell: bash
+      env:
+        OP_SECRETS: ${{ inputs.op_secrets }}
+      run: |
+        set -euo pipefail
+        if [ -z "${OP_SERVICE_ACCOUNT_TOKEN:-}" ] || [ -z "$(printf '%s' "${OP_SECRETS}" | tr -d '[:space:]')" ]; then
+          echo "skip=true" >> "$GITHUB_OUTPUT"
+          echo "1Password load skipped (no OP_SERVICE_ACCOUNT_TOKEN or no op_secrets); using runner-provided env."
+          exit 0
+        fi
+        echo "skip=false" >> "$GITHUB_OUTPUT"
+        # Stage each ENV=op://ref line into $GITHUB_ENV so load-secrets-action resolves it.
+        while IFS= read -r line; do
+          trimmed="$(printf '%s' "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+          [ -z "$trimmed" ] && continue
+          echo "$trimmed" >> "$GITHUB_ENV"
+        done <<< "$OP_SECRETS"
+    - name: Load secrets from 1Password
+      if: steps.stage.outputs.skip == 'false'
+      uses: 1password/load-secrets-action@581a835fb51b8e7ec56b71cf2ffddd7e68bb25e0 # v2
+      with:
+        export-env: true
