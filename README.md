@@ -28,6 +28,7 @@ All three accept:
 | `tenant_id` | `""` | Azure tenant ID (used when `azure_oidc: true`). |
 | `subscription_id` | `""` | Azure subscription ID (used when `azure_oidc: true`). |
 | `backend_config` | `""` | Multiline `key=value` list passed to `init` as `-backend-config` flags. For repos with a *partial* backend block (e.g. an empty `backend "azurerm" {}`). Empty ⇒ bare `init`. |
+| `environment` | `""` | **`standard-ci` only**: GitHub Environment to bind the plan job to. Needed when the repo customizes its OIDC subject to require the `environment` claim. Empty ⇒ no environment. (`standard-cd` already has `plan_environment`/`apply_environment`.) |
 
 `standard-ci.yaml` / `standard-drift.yaml` also accept `client_id` (the Azure AD app for
 OIDC). `standard-cd.yaml` additionally requires `plan_environment` and `apply_environment`
