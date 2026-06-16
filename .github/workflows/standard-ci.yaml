@@ -36,6 +36,10 @@ on:
         description: 'Multiline key=value list passed to init as -backend-config (for partial backend blocks, e.g. an empty azurerm block). Empty => bare init.'
         type: string
         default: ""
+      extra_env:
+        description: 'Multiline KEY=value list exported into the job env before init/plan/apply (e.g. provider tuning like AZAPI_RETRY_GET_AFTER_PUT_MAX_TIME).'
+        type: string
+        default: ""
       environment:
         description: 'Optional GitHub Environment to bind the plan job to. Needed when the repo customizes the OIDC subject to require the environment claim. Empty => no environment.'
         type: string
@@ -76,6 +80,16 @@ jobs:
         with:
           engine: ${{ inputs.engine }}
           engine_version: ${{ inputs.engine_version }}
+      - name: Export extra env
+        shell: bash
+        env:
+          EXTRA_ENV: ${{ inputs.extra_env }}
+        run: |
+          while IFS= read -r line; do
+            line="$(printf '%s' "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+            [ -z "$line" ] && continue
+            echo "$line" >> "$GITHUB_ENV"
+          done <<< "$EXTRA_ENV"
       - name: Load 1Password secrets
         uses: codelooks-com/terraform-workflows/.github/actions/load-op-secrets@main
         with:
