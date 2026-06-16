@@ -24,9 +24,15 @@ All three accept:
 | `runner` | `ubuntu-latest` | Pass an ARC scale-set name (e.g. `terraform-vsphere`) to run on the cluster. |
 | `root_module_folder_relative_path` | `.` | Root module location. |
 | `op_secrets` | `""` | Multiline `ENV_NAME=op://vault/item/field` list (cloud runners). |
+| `azure_oidc` | `false` | Authenticate to Azure via GitHub OIDC (federated, no secrets) instead of 1Password. Sets `ARM_*` env and requests an `id-token`. |
+| `tenant_id` | `""` | Azure tenant ID (used when `azure_oidc: true`). |
+| `subscription_id` | `""` | Azure subscription ID (used when `azure_oidc: true`). |
 
-`standard-cd.yaml` additionally requires `plan_environment` and `apply_environment`
-(GitHub Environment names) and accepts `action` (`apply` \| `destroy`).
+`standard-ci.yaml` / `standard-drift.yaml` also accept `client_id` (the Azure AD app for
+OIDC). `standard-cd.yaml` additionally requires `plan_environment` and `apply_environment`
+(GitHub Environment names), accepts `action` (`apply` \| `destroy`), and takes **split**
+`plan_client_id` / `apply_client_id` so the plan and apply phases can use different
+service principals (read-only plan SP, write apply SP) to preserve least privilege.
 
 ## Credential model (1Password)
 
@@ -51,6 +57,32 @@ op_secrets: |
 
 **Prerequisite:** a 1Password service account with read access to the relevant vault(s),
 token stored as the `OP_SERVICE_ACCOUNT_TOKEN` GitHub secret (org-level on codelooks-com).
+
+## Credential model (Azure OIDC — federated, no secrets)
+
+Azure repos can skip 1Password entirely and authenticate with **GitHub OIDC federated
+credentials** — no client secrets stored anywhere. Set `azure_oidc: true` and pass the
+client/tenant/subscription IDs; the workflow sets `ARM_USE_OIDC`/`ARM_USE_AZUREAD` and the
+job requests an `id-token`. The consumer keeps an `azurerm` backend block in its own
+`backend.tf` (the workflows are backend-agnostic).
+
+```yaml
+# ci.yaml caller
+jobs:
+  ci:
+    permissions: { contents: read, pull-requests: write, id-token: write }
+    uses: codelooks-com/terraform-workflows/.github/workflows/standard-ci.yaml@main
+    with:
+      engine: opentofu
+      azure_oidc: true
+      client_id: ${{ vars.PLAN_CLIENT_ID }}
+      tenant_id: ${{ vars.ARM_TENANT_ID }}
+      subscription_id: ${{ vars.ARM_SUBSCRIPTION_ID }}
+```
+
+**Prerequisite:** federated credentials on the SP(s) whose subjects match the jobs that use
+them — `repo:<org>/<repo>:pull_request` (ci plan), `repo:<org>/<repo>:environment:<env>`
+(cd plan/apply), and `repo:<org>/<repo>:ref:refs/heads/<default-branch>` (scheduled drift).
 
 ## R2 backend block (copy into each consumer repo)
 

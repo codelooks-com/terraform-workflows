@@ -18,6 +18,20 @@ on:
       op_secrets:
         type: string
         default: ""
+      azure_oidc:
+        description: 'Authenticate to Azure via GitHub OIDC (federated, no secrets). When true, sets ARM_* env from the inputs below and the job requests an id-token.'
+        type: boolean
+        default: false
+      client_id:
+        description: 'Azure AD application (client) ID for OIDC. Used for the plan/validate phase.'
+        type: string
+        default: ""
+      tenant_id:
+        type: string
+        default: ""
+      subscription_id:
+        type: string
+        default: ""
     secrets:
       OP_SERVICE_ACCOUNT_TOKEN:
         required: false
@@ -32,11 +46,18 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+      id-token: write   # Azure OIDC (no-op unless a federated credential trusts this repo)
     concurrency:
       group: ${{ github.repository }}-tfstate
       cancel-in-progress: false
     env:
       OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+      # Azure OIDC: empty/false for non-Azure repos (ignored when no azurerm provider).
+      ARM_USE_OIDC: ${{ inputs.azure_oidc }}
+      ARM_USE_AZUREAD: ${{ inputs.azure_oidc }}
+      ARM_CLIENT_ID: ${{ inputs.client_id }}
+      ARM_TENANT_ID: ${{ inputs.tenant_id }}
+      ARM_SUBSCRIPTION_ID: ${{ inputs.subscription_id }}
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
