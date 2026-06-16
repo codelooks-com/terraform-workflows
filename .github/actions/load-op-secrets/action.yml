@@ -29,6 +29,6 @@ runs:
         done <<< "$OP_SECRETS"
     - name: Load secrets from 1Password
       if: steps.stage.outputs.skip == 'false'
-      uses: 1password/load-secrets-action@581a835fb51b8e7ec56b71cf2ffddd7e68bb25e0 # v2
+      uses: 1password/load-secrets-action@3a12b0ab99d9cd590a3e9b5a90ea017210ed9556 # v4.0.1
       with:
         export-env: true
