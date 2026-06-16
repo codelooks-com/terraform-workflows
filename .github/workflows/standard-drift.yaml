@@ -1,0 +1,136 @@
+---
+name: standard-drift
+on:
+  workflow_call:
+    inputs:
+      engine:
+        type: string
+        default: opentofu
+      engine_version:
+        type: string
+        default: latest
+      runner:
+        type: string
+        default: ubuntu-latest
+      root_module_folder_relative_path:
+        type: string
+        default: "."
+    secrets:
+      AWS_ACCESS_KEY_ID:
+        required: false
+      AWS_SECRET_ACCESS_KEY:
+        required: false
+      CLOUDFLARE_API_TOKEN:
+        required: false
+      TS_OAUTH_CLIENT_ID:
+        required: false
+      TS_OAUTH_SECRET:
+        required: false
+      NEXTDNS_API_KEY:
+        required: false
+      VSPHERE_USER:
+        required: false
+      VSPHERE_PASSWORD:
+        required: false
+      VSPHERE_SERVER:
+        required: false
+      DRIFT_WEBHOOK:
+        required: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  drift:
+    name: Detect drift
+    runs-on: ${{ inputs.runner }}
+    concurrency:
+      group: ${{ github.repository }}-tfstate
+      cancel-in-progress: false
+    env:
+      IN_AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      IN_AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      IN_CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      IN_TS_OAUTH_CLIENT_ID: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+      IN_TS_OAUTH_SECRET: ${{ secrets.TS_OAUTH_SECRET }}
+      IN_NEXTDNS_API_KEY: ${{ secrets.NEXTDNS_API_KEY }}
+      IN_VSPHERE_USER: ${{ secrets.VSPHERE_USER }}
+      IN_VSPHERE_PASSWORD: ${{ secrets.VSPHERE_PASSWORD }}
+      IN_VSPHERE_SERVER: ${{ secrets.VSPHERE_SERVER }}
+      DRIFT_WEBHOOK: ${{ secrets.DRIFT_WEBHOOK }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - name: Setup engine
+        id: engine
+        uses: codelooks-com/terraform-workflows/.github/actions/setup-engine@main
+        with:
+          engine: ${{ inputs.engine }}
+          engine_version: ${{ inputs.engine_version }}
+      - name: Resolve credentials
+        uses: codelooks-com/terraform-workflows/.github/actions/resolve-creds@main
+      - name: Init
+        shell: bash
+        run: ${{ steps.engine.outputs.bin }} -chdir="${{ inputs.root_module_folder_relative_path }}" init -input=false
+      - name: Plan (detailed exit code)
+        id: plan
+        shell: bash
+        run: |
+          set +e
+          ${{ steps.engine.outputs.bin }} -chdir="${{ inputs.root_module_folder_relative_path }}" plan -input=false -detailed-exitcode -no-color > plan.txt 2>&1
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+      - name: Decide
+        id: decide
+        uses: codelooks-com/terraform-workflows/.github/actions/drift-decide@main
+        with:
+          exit_code: ${{ steps.plan.outputs.exit_code }}
+      - name: Manage drift issue
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const action = '${{ steps.decide.outputs.action }}';
+            const label = 'terraform-drift';
+            const title = `Terraform drift detected: ${context.repo.repo}`;
+            const { owner, repo } = context.repo;
+            const existing = await github.rest.issues.listForRepo({ owner, repo, state: 'open', labels: label });
+            const open = existing.data.find(i => i.title === title);
+            if (action === 'none') {
+              if (open) {
+                await github.rest.issues.createComment({ owner, repo, issue_number: open.number, body: 'Drift cleared ✅ — closing.' });
+                await github.rest.issues.update({ owner, repo, issue_number: open.number, state: 'closed' });
+              }
+              return;
+            }
+            let plan = '';
+            try { plan = fs.readFileSync('plan.txt', 'utf8'); } catch (e) { plan = '(no plan output captured)'; }
+            const truncated = plan.length > 60000 ? plan.slice(-60000) : plan;
+            const heading = action === 'error' ? '⚠️ Drift check **errored**' : '🌱 **Drift detected**';
+            const body = `${heading} on \`${context.sha.slice(0,7)}\` (run ${context.runId}).
+
+            <details><summary>Plan output</summary>
+
+            \`\`\`
+            ${truncated}
+            \`\`\`
+
+            </details>`;
+            if (open) {
+              await github.rest.issues.update({ owner, repo, issue_number: open.number, body });
+              await github.rest.issues.createComment({ owner, repo, issue_number: open.number, body: `Re-checked: still ${action}.` });
+            } else {
+              await github.rest.issues.create({ owner, repo, title, labels: [label], body });
+            }
+      - name: Notify
+        if: steps.decide.outputs.action != 'none' && env.DRIFT_WEBHOOK != ''
+        shell: bash
+        run: |
+          curl -fsS -X POST -H 'Content-Type: application/json' \
+            -d "{\"text\":\"Terraform drift (${{ steps.decide.outputs.action }}) in ${{ github.repository }} — see issues\"}" \
+            "$DRIFT_WEBHOOK" || echo "notification failed (non-fatal)"
+      - name: Fail on error
+        if: steps.decide.outputs.action == 'error'
+        shell: bash
+        run: exit 1

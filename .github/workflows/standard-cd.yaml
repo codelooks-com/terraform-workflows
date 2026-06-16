@@ -1,0 +1,133 @@
+---
+name: standard-cd
+on:
+  workflow_call:
+    inputs:
+      engine:
+        type: string
+        default: opentofu
+      engine_version:
+        type: string
+        default: latest
+      runner:
+        type: string
+        default: ubuntu-latest
+      root_module_folder_relative_path:
+        type: string
+        default: "."
+      plan_environment:
+        type: string
+        required: true
+      apply_environment:
+        type: string
+        required: true
+      action:
+        type: string
+        default: apply
+    secrets:
+      AWS_ACCESS_KEY_ID:
+        required: false
+      AWS_SECRET_ACCESS_KEY:
+        required: false
+      CLOUDFLARE_API_TOKEN:
+        required: false
+      TS_OAUTH_CLIENT_ID:
+        required: false
+      TS_OAUTH_SECRET:
+        required: false
+      NEXTDNS_API_KEY:
+        required: false
+      VSPHERE_USER:
+        required: false
+      VSPHERE_PASSWORD:
+        required: false
+      VSPHERE_SERVER:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    name: Plan
+    runs-on: ${{ inputs.runner }}
+    environment: ${{ inputs.plan_environment }}
+    concurrency:
+      group: ${{ github.repository }}-tfstate
+      cancel-in-progress: false
+    env:
+      IN_AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      IN_AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      IN_CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      IN_TS_OAUTH_CLIENT_ID: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+      IN_TS_OAUTH_SECRET: ${{ secrets.TS_OAUTH_SECRET }}
+      IN_NEXTDNS_API_KEY: ${{ secrets.NEXTDNS_API_KEY }}
+      IN_VSPHERE_USER: ${{ secrets.VSPHERE_USER }}
+      IN_VSPHERE_PASSWORD: ${{ secrets.VSPHERE_PASSWORD }}
+      IN_VSPHERE_SERVER: ${{ secrets.VSPHERE_SERVER }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - name: Setup engine
+        id: engine
+        uses: codelooks-com/terraform-workflows/.github/actions/setup-engine@main
+        with:
+          engine: ${{ inputs.engine }}
+          engine_version: ${{ inputs.engine_version }}
+      - name: Resolve credentials
+        uses: codelooks-com/terraform-workflows/.github/actions/resolve-creds@main
+      - name: Init
+        shell: bash
+        run: ${{ steps.engine.outputs.bin }} -chdir="${{ inputs.root_module_folder_relative_path }}" init -input=false
+      - name: Plan
+        shell: bash
+        run: |
+          ${{ steps.engine.outputs.bin }} -chdir="${{ inputs.root_module_folder_relative_path }}" plan -input=false -out=tfplan ${{ inputs.action == 'destroy' && '-destroy' || '' }}
+      - name: Upload plan artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: tfplan
+          path: ${{ inputs.root_module_folder_relative_path }}/tfplan
+          retention-days: 5
+          if-no-files-found: error
+
+  apply:
+    name: Apply
+    needs: plan
+    runs-on: ${{ inputs.runner }}
+    environment: ${{ inputs.apply_environment }}
+    concurrency:
+      group: ${{ github.repository }}-tfstate
+      cancel-in-progress: false
+    env:
+      IN_AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      IN_AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      IN_CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      IN_TS_OAUTH_CLIENT_ID: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+      IN_TS_OAUTH_SECRET: ${{ secrets.TS_OAUTH_SECRET }}
+      IN_NEXTDNS_API_KEY: ${{ secrets.NEXTDNS_API_KEY }}
+      IN_VSPHERE_USER: ${{ secrets.VSPHERE_USER }}
+      IN_VSPHERE_PASSWORD: ${{ secrets.VSPHERE_PASSWORD }}
+      IN_VSPHERE_SERVER: ${{ secrets.VSPHERE_SERVER }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - name: Setup engine
+        id: engine
+        uses: codelooks-com/terraform-workflows/.github/actions/setup-engine@main
+        with:
+          engine: ${{ inputs.engine }}
+          engine_version: ${{ inputs.engine_version }}
+      - name: Resolve credentials
+        uses: codelooks-com/terraform-workflows/.github/actions/resolve-creds@main
+      - name: Init
+        shell: bash
+        run: ${{ steps.engine.outputs.bin }} -chdir="${{ inputs.root_module_folder_relative_path }}" init -input=false
+      - name: Download plan artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: tfplan
+          path: ${{ inputs.root_module_folder_relative_path }}
+      - name: Apply
+        shell: bash
+        run: ${{ steps.engine.outputs.bin }} -chdir="${{ inputs.root_module_folder_relative_path }}" apply -input=false -auto-approve tfplan
