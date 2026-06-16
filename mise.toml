@@ -1,0 +1,4 @@
+[tools]
+"bats" = "latest"
+"actionlint" = "latest"
+"pinact" = "latest"

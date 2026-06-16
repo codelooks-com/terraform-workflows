@@ -1,0 +1,17 @@
+---
+name: drift-decide
+description: Translate a plan -detailed-exitcode status into a drift action (none|drift|error).
+inputs:
+  exit_code:
+    description: The exit code returned by `plan -detailed-exitcode`.
+    required: true
+outputs:
+  action:
+    description: One of none | drift | error.
+    value: ${{ steps.run.outputs.action }}
+runs:
+  using: composite
+  steps:
+    - id: run
+      shell: bash
+      run: echo "action=$(bash "${GITHUB_ACTION_PATH}/decide.sh" "${{ inputs.exit_code }}")" >> "$GITHUB_OUTPUT"
