@@ -27,6 +27,7 @@ All three accept:
 | `azure_oidc` | `false` | Authenticate to Azure via GitHub OIDC (federated, no secrets) instead of 1Password. Sets `ARM_*` env and requests an `id-token`. |
 | `tenant_id` | `""` | Azure tenant ID (used when `azure_oidc: true`). |
 | `subscription_id` | `""` | Azure subscription ID (used when `azure_oidc: true`). |
+| `backend_config` | `""` | Multiline `key=value` list passed to `init` as `-backend-config` flags. For repos with a *partial* backend block (e.g. an empty `backend "azurerm" {}`). Empty ⇒ bare `init`. |
 
 `standard-ci.yaml` / `standard-drift.yaml` also accept `client_id` (the Azure AD app for
 OIDC). `standard-cd.yaml` additionally requires `plan_environment` and `apply_environment`

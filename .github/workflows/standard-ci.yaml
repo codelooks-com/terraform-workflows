@@ -32,6 +32,10 @@ on:
       subscription_id:
         type: string
         default: ""
+      backend_config:
+        description: 'Multiline key=value list passed to init as -backend-config (for partial backend blocks, e.g. an empty azurerm block). Empty => bare init.'
+        type: string
+        default: ""
     secrets:
       OP_SERVICE_ACCOUNT_TOKEN:
         required: false
@@ -76,7 +80,16 @@ jobs:
         run: ${{ steps.engine.outputs.bin }} -chdir="${{ inputs.root_module_folder_relative_path }}" fmt -check -recursive
       - name: Init
         shell: bash
-        run: ${{ steps.engine.outputs.bin }} -chdir="${{ inputs.root_module_folder_relative_path }}" init -input=false
+        env:
+          BACKEND_CONFIG: ${{ inputs.backend_config }}
+        run: |
+          init_args=()
+          while IFS= read -r line; do
+            line="$(printf '%s' "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+            [ -z "$line" ] && continue
+            init_args+=( -backend-config="$line" )
+          done <<< "$BACKEND_CONFIG"
+          ${{ steps.engine.outputs.bin }} -chdir="${{ inputs.root_module_folder_relative_path }}" init -input=false "${init_args[@]}"
       - name: Validate
         shell: bash
         run: ${{ steps.engine.outputs.bin }} -chdir="${{ inputs.root_module_folder_relative_path }}" validate
