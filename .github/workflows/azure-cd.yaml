@@ -101,6 +101,10 @@ jobs:
         with:
           name: module
           path: ./staging/
+          # .terraform.lock.hcl is a dotfile; upload-artifact@v4+ excludes hidden files by default,
+          # which silently drops the lock from the plan→apply artifact and makes the apply job
+          # re-resolve providers ("Inconsistent dependency lock file"). Keep hidden files.
+          include-hidden-files: true
 
       - name: Show the Plan for Review
         run: |
