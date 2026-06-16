@@ -36,6 +36,10 @@ on:
         description: 'Multiline key=value list passed to init as -backend-config (for partial backend blocks, e.g. an empty azurerm block). Empty => bare init.'
         type: string
         default: ""
+      environment:
+        description: 'Optional GitHub Environment to bind the plan job to. Needed when the repo customizes the OIDC subject to require the environment claim. Empty => no environment.'
+        type: string
+        default: ""
     secrets:
       OP_SERVICE_ACCOUNT_TOKEN:
         required: false
@@ -47,6 +51,7 @@ jobs:
   plan:
     name: Validate & Plan
     runs-on: ${{ inputs.runner }}
+    environment: ${{ inputs.environment }}
     permissions:
       contents: read
       pull-requests: write
