@@ -76,7 +76,12 @@ jobs:
           $stagingDirectory = "staging"
           $rootModuleFolder = "${{inputs.root_module_folder_relative_path}}"
           New-Item -Path . -Name $stagingDirectory -ItemType "directory"
-          Copy-Item -Path "./*" -Exclude @(".git", ".terraform", ".github",  $stagingDirectory) -Recurse -Destination "./$stagingDirectory"
+          # -Force includes dotfiles in the wildcard copy — critically .terraform.lock.hcl, which
+          # the apply job needs so it applies the saved plan with the exact provider selections it
+          # was planned with. Without it the apply re-resolves providers and fails with
+          # "Inconsistent dependency lock file". (.terraform is excluded above and the staged copy
+          # is pruned below, so -Force only adds the lock file plus other harmless dotfiles.)
+          Copy-Item -Path "./*" -Exclude @(".git", ".terraform", ".github",  $stagingDirectory) -Recurse -Force -Destination "./$stagingDirectory"
 
           $rootModuleFolderTerraformFolder = Join-Path -Path "./$stagingDirectory" -ChildPath $rootModuleFolder -AdditionalChildPath ".terraform"
           if(Test-Path -Path $rootModuleFolderTerraformFolder) {
