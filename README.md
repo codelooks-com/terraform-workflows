@@ -23,23 +23,34 @@ All three accept:
 | `engine_version` | `latest` | CLI version. |
 | `runner` | `ubuntu-latest` | Pass an ARC scale-set name (e.g. `terraform-vsphere`) to run on the cluster. |
 | `root_module_folder_relative_path` | `.` | Root module location. |
+| `op_secrets` | `""` | Multiline `ENV_NAME=op://vault/item/field` list (cloud runners). |
 
 `standard-cd.yaml` additionally requires `plan_environment` and `apply_environment`
 (GitHub Environment names) and accepts `action` (`apply` \| `destroy`).
 
-## Credential model
+## Credential model (1Password)
 
-Workflows read credentials from the **environment**. The `resolve-creds` action maps
-caller-provided secrets (`IN_<NAME>`) into the environment **only when non-empty**, so:
+Credentials come from **1Password** on cloud runners and from the **runner pod env** on
+ARC cluster runners — there are no per-provider GitHub secrets.
 
-- **Cloud runners** pass creds via `secrets:` in the caller (mapped in).
-- **Cluster (ARC) runners** receive creds via the pod's `envFrom`; empty caller secrets
-  do not clobber them.
+- **Cloud runners:** pass an `op_secrets` input (multiline `ENV_NAME=op://vault/item/field`)
+  plus a single `OP_SERVICE_ACCOUNT_TOKEN` secret (org-level recommended). The
+  `load-op-secrets` action resolves the references into the job env before init/plan/apply.
+- **Cluster (ARC) runners:** creds arrive via the pod's `envFrom`; `load-op-secrets` is a
+  no-op when no `OP_SERVICE_ACCOUNT_TOKEN` is set.
 
-R2 state creds (`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`) are required on **both**
-runner types. Recognised provider creds: `CLOUDFLARE_API_TOKEN`, `TS_OAUTH_CLIENT_ID`,
-`TS_OAUTH_SECRET`, `NEXTDNS_API_KEY`, GitHub App creds, `VSPHERE_USER` /
-`VSPHERE_PASSWORD` / `VSPHERE_SERVER`.
+Example caller `op_secrets` (nextdns):
+
+```yaml
+op_secrets: |
+  AWS_ACCESS_KEY_ID=op://Talos/cloudflare-r2-tfstate/R2_ACCESS_KEY_ID
+  AWS_SECRET_ACCESS_KEY=op://Talos/cloudflare-r2-tfstate/R2_SECRET_ACCESS_KEY
+  AWS_ENDPOINT_URL_S3=op://Talos/cloudflare-r2-tfstate/R2_S3_ENDPOINT
+  TF_VAR_nextdns_api_key=op://Talos/<nextdns-item>/<field>
+```
+
+**Prerequisite:** a 1Password service account with read access to the relevant vault(s),
+token stored as the `OP_SERVICE_ACCOUNT_TOKEN` GitHub secret (org-level on codelooks-com).
 
 ## R2 backend block (copy into each consumer repo)
 
