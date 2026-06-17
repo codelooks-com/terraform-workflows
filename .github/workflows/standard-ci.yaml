@@ -48,18 +48,19 @@ on:
       OP_SERVICE_ACCOUNT_TOKEN:
         required: false
 
-permissions:
-  contents: read
+# No permissions: block here on purpose. Permissions are INHERITED from the
+# calling workflow's job so OIDC callers can grant `id-token: write` while
+# non-OIDC callers don't. A reusable workflow can only DOWNGRADE the caller's
+# token, so hardcoding `id-token: write` makes startup fail for any caller that
+# doesn't grant it (cloudflare/tailscale/nextdns/github). Each caller declares
+# exactly what it needs (CI callers: contents: read + pull-requests: write;
+# Azure additionally grants id-token: write).
 
 jobs:
   plan:
     name: Validate & Plan
     runs-on: ${{ inputs.runner }}
     environment: ${{ inputs.environment }}
-    permissions:
-      contents: read
-      pull-requests: write
-      id-token: write   # Azure OIDC (no-op unless a federated credential trusts this repo)
     concurrency:
       group: ${{ github.repository }}-tfstate
       cancel-in-progress: false
