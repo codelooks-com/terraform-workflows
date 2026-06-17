@@ -57,17 +57,18 @@ on:
       OP_SERVICE_ACCOUNT_TOKEN:
         required: false
 
-permissions:
-  contents: read
+# No permissions: block here on purpose. Permissions are INHERITED from the
+# calling workflow's job so OIDC callers can grant `id-token: write` while
+# non-OIDC callers don't. A reusable workflow can only DOWNGRADE the caller's
+# token, so hardcoding `id-token: write` makes startup fail for any caller that
+# doesn't grant it. Each caller declares what it needs (CD callers: contents:
+# read; Azure additionally grants id-token: write).
 
 jobs:
   plan:
     name: Plan
     runs-on: ${{ inputs.runner }}
     environment: ${{ inputs.plan_environment }}
-    permissions:
-      contents: read
-      id-token: write   # Azure OIDC (no-op unless a federated credential trusts this repo)
     concurrency:
       group: ${{ github.repository }}-tfstate
       cancel-in-progress: false
@@ -129,9 +130,6 @@ jobs:
     needs: plan
     runs-on: ${{ inputs.runner }}
     environment: ${{ inputs.apply_environment }}
-    permissions:
-      contents: read
-      id-token: write   # Azure OIDC (no-op unless a federated credential trusts this repo)
     concurrency:
       group: ${{ github.repository }}-tfstate
       cancel-in-progress: false
