@@ -63,6 +63,13 @@ OIDC). `standard-cd.yaml` additionally requires `plan_environment` and `apply_en
 `plan_client_id` / `apply_client_id` so the plan and apply phases can use different
 service principals (read-only plan SP, write apply SP) to preserve least privilege.
 
+> **Why the input names differ:** the asymmetry is deliberate, not drift. `standard-ci`
+> and `standard-drift` run a single read-only phase, so one `client_id` suffices.
+> `standard-cd` runs two phases with different privilege levels, so its identity and
+> environment inputs are split (`plan_*` / `apply_*`). Renaming ci/drift's `client_id`
+> to `plan_client_id` for symmetry would be a breaking change for every consumer with
+> no privilege benefit — a single-phase workflow has nothing to split.
+
 ## Credential model (1Password)
 
 Credentials come from **1Password** on cloud runners and from the **runner pod env** on
