@@ -7,8 +7,11 @@ on:
         type: string
         default: opentofu
       engine_version:
+        # Deliberately pinned (assumes the default engine, opentofu): a new release
+        # must land as a reviewed bump, never silently change what CI runs.
+        # Renovate bumps this. Callers should still pin explicitly.
         type: string
-        default: latest
+        default: "1.12.3"
       runner:
         type: string
         default: ubuntu-latest
@@ -77,7 +80,7 @@ jobs:
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - name: Setup engine
         id: engine
-        uses: codelooks-com/terraform-workflows/.github/actions/setup-engine@main
+        uses: codelooks-com/terraform-workflows/.github/actions/setup-engine@v1.0.0
         with:
           engine: ${{ inputs.engine }}
           engine_version: ${{ inputs.engine_version }}
@@ -92,7 +95,7 @@ jobs:
             echo "$line" >> "$GITHUB_ENV"
           done <<< "$EXTRA_ENV"
       - name: Load 1Password secrets
-        uses: codelooks-com/terraform-workflows/.github/actions/load-op-secrets@main
+        uses: codelooks-com/terraform-workflows/.github/actions/load-op-secrets@v1.0.0
         with:
           op_secrets: ${{ inputs.op_secrets }}
       - name: Format check
@@ -113,6 +116,28 @@ jobs:
       - name: Validate
         shell: bash
         run: ${{ steps.engine.outputs.bin }} -chdir="${{ inputs.root_module_folder_relative_path }}" validate
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@6e1e0642c0289bd619021bf6b34e3c08ed1e005a # v6.3.0
+        with:
+          tflint_version: v0.63.1
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: TFLint
+        shell: bash
+        env:
+          # tflint --init fetches rule plugins from GitHub releases; the token
+          # avoids anonymous API rate limits.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Blocking lint gate (estate decision 2026-07-06). Uses the repo-root
+          # .tflint.hcl when present (absolute path so it applies in --recursive
+          # mode); repos without one get tflint's default terraform ruleset.
+          config_args=()
+          if [ -f .tflint.hcl ]; then
+            config_args=( --config "$(pwd)/.tflint.hcl" )
+          fi
+          tflint --init "${config_args[@]}"
+          cd "${{ inputs.root_module_folder_relative_path }}"
+          tflint "${config_args[@]}" --recursive -f compact
       - name: Plan
         id: plan
         shell: bash

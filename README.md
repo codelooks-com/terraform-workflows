@@ -1,9 +1,5 @@
 # terraform-workflows
 
-> **Note:** this repository is being renamed from `terraform-azure-templates` to
-> `terraform-workflows`. Examples below use the new name; the `uses:` paths resolve
-> once the rename lands.
-
 Reusable GitHub Actions workflows for the codelooks Terraform/OpenTofu estate.
 
 ## Workflow families
@@ -13,6 +9,28 @@ Reusable GitHub Actions workflows for the codelooks Terraform/OpenTofu estate.
 | **azure-*** | `azure-ci.yaml`, `azure-cd.yaml` | Azure Landing Zone CI/CD. `azurerm` backend, Azure OIDC (`ARM_*`). Azure-specific. |
 | **standard-*** | `standard-ci.yaml`, `standard-cd.yaml`, `standard-drift.yaml` | Generic CI/CD/drift for all other repos. OpenTofu (default) or Terraform, Cloudflare R2 backend. |
 
+## Versioning & pinning
+
+Consumers pin `uses:` references to a release tag or commit SHA — never `@main`. These
+workflows run with the caller's apply credentials, so an unpinned ref means any push to
+this repo's `main` executes in every apply pipeline in the estate. Renovate (house
+preset) converts tag refs to `SHA # vX.Y.Z` pins and bumps them via PR.
+
+```yaml
+uses: codelooks-com/terraform-workflows/.github/workflows/standard-ci.yaml@v1.0.0
+```
+
+Internal `uses:` references (the composite actions the reusable workflows call) are
+pinned to the release tag itself, so a pinned consumer never executes unpinned code.
+
+**Release procedure** (the tag is self-referencing, so order matters):
+
+1. In the release PR, update every internal `.github/actions/*@<tag>` reference to the
+   new tag name.
+2. Merge the PR.
+3. Immediately tag the merge commit: `git tag vX.Y.Z <merge-sha> && git push origin vX.Y.Z`.
+   The internal refs cannot resolve until the tag exists, so cut it straight after merging.
+
 ## standard-* inputs
 
 All three accept:
@@ -20,7 +38,7 @@ All three accept:
 | Input | Default | Notes |
 |-------|---------|-------|
 | `engine` | `opentofu` | `opentofu` \| `terraform` (Terraform pending the parity gate). |
-| `engine_version` | `latest` | CLI version. |
+| `engine_version` | `1.12.3` | CLI version (pinned OpenTofu; Renovate bumps the default). Callers should still pin explicitly. |
 | `runner` | `ubuntu-latest` | Pass an ARC scale-set name (e.g. `terraform-vsphere`) to run on the cluster. |
 | `root_module_folder_relative_path` | `.` | Root module location. |
 | `op_secrets` | `""` | Multiline `ENV_NAME=op://vault/item/field` list (cloud runners). |
@@ -29,7 +47,7 @@ All three accept:
 | `subscription_id` | `""` | Azure subscription ID (used when `azure_oidc: true`). |
 | `backend_config` | `""` | Multiline `key=value` list passed to `init` as `-backend-config` flags. For repos with a *partial* backend block (e.g. an empty `backend "azurerm" {}`). Empty ⇒ bare `init`. |
 | `extra_env` | `""` | Multiline `KEY=value` list exported into the job env (via `$GITHUB_ENV`) before `init`/`plan`/`apply`. For provider tuning such as `AZAPI_RETRY_GET_AFTER_PUT_MAX_TIME`. Empty ⇒ no-op. |
-| `environment` | `""` | **`standard-ci` only**: GitHub Environment to bind the plan job to. Needed when the repo customizes its OIDC subject to require the `environment` claim. Empty ⇒ no environment. (`standard-cd` already has `plan_environment`/`apply_environment`.) |
+| `environment` | `""` | **`standard-ci` / `standard-drift`**: GitHub Environment to bind the plan/drift job to. Needed when the repo customizes its OIDC subject to require the `environment` claim. Empty ⇒ no environment. (`standard-cd` already has `plan_environment`/`apply_environment`.) |
 
 `standard-ci.yaml` / `standard-drift.yaml` also accept `client_id` (the Azure AD app for
 OIDC). `standard-cd.yaml` additionally requires `plan_environment` and `apply_environment`
@@ -74,7 +92,7 @@ job requests an `id-token`. The consumer keeps an `azurerm` backend block in its
 jobs:
   ci:
     permissions: { contents: read, pull-requests: write, id-token: write }
-    uses: codelooks-com/terraform-workflows/.github/workflows/standard-ci.yaml@main
+    uses: codelooks-com/terraform-workflows/.github/workflows/standard-ci.yaml@v1.0.0
     with:
       engine: opentofu
       azure_oidc: true

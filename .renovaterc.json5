@@ -1,0 +1,37 @@
+{
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+
+  // Shared reusable-workflow control plane for the codelooks IaC estate. Renovate
+  // (house preset) keeps the SHA-pinned third-party actions fresh via reviewed PRs —
+  // this repo previously relied on manual `pinact` runs for pin bumps.
+  extends: [
+    // House preset — extends home-operations#2.0.0 + :timezone(Europe/London) +
+    // vulnerabilityAlerts + the "dependencies" label, and pins GitHub Actions to
+    // immutable commit SHAs (helpers:pinGitHubActionDigestsToSemver keeps the
+    // semver tag as a comment).
+    "github>LukeEvansTech/renovate-config",
+  ],
+
+  packageRules: [
+    {
+      // This repo is the estate's apply-pipeline supply chain: every bump here
+      // ships into every consumer's CI/CD on the next release tag. Never automerge.
+      matchPackageNames: ["*"],
+      automerge: false,
+    },
+  ],
+
+  customManagers: [
+    {
+      // Bump the pinned OpenTofu engine_version defaults in the reusable workflows.
+      customType: "regex",
+      managerFilePatterns: ["/^\\.github/workflows/.+\\.ya?ml$/"],
+      matchStrings: [
+        'engine_version:\\s*"(?<currentValue>\\d+\\.\\d+\\.\\d+)"',
+      ],
+      datasourceTemplate: "github-releases",
+      packageNameTemplate: "opentofu/opentofu",
+      extractVersionTemplate: "^v(?<version>.*)$",
+    },
+  ],
+}
