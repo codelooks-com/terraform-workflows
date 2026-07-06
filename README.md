@@ -2,12 +2,20 @@
 
 Reusable GitHub Actions workflows for the codelooks Terraform/OpenTofu estate.
 
-## Workflow families
+## Workflows
 
-| Family | Files | Purpose |
-|--------|-------|---------|
-| **azure-*** | `azure-ci.yaml`, `azure-cd.yaml` | Azure Landing Zone CI/CD. `azurerm` backend, Azure OIDC (`ARM_*`). Azure-specific. |
-| **standard-*** | `standard-ci.yaml`, `standard-cd.yaml`, `standard-drift.yaml` | Generic CI/CD/drift for all other repos. OpenTofu (default) or Terraform, Cloudflare R2 backend. |
+One family serves the whole estate — Azure and non-Azure alike:
+
+| File | Purpose |
+|------|---------|
+| `standard-ci.yaml` | PR gate: fmt / init / validate / tflint / plan, with a plan comment on the PR. |
+| `standard-cd.yaml` | Push-to-main plan → apply (split plan/apply environments and client IDs), plus manual `apply`/`destroy` dispatch. |
+| `standard-drift.yaml` | Scheduled `-detailed-exitcode` plan that files/updates a `terraform-drift` issue. |
+
+Azure support is declarative only (the `azure_oidc` flag + ID inputs set `ARM_*` env);
+there are no Azure-specific steps. The legacy `azure-ci`/`azure-cd` family was removed
+2026-07-06 after its last consumer (terraform-azure-platform) cut over to `standard-*` —
+it remains in git history and the pre-removal tags if ever needed.
 
 ## Versioning & pinning
 
