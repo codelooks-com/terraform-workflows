@@ -20,4 +20,16 @@
       automerge: false,
     },
   ],
+
+  customManagers: [
+    {
+      // Bump the pinned OpenTofu engine_version defaults in the reusable workflows.
+      customType: "regex",
+      fileMatch: ["^\\.github/workflows/.+\\.ya?ml$"],
+      matchStrings: ['engine_version:\\s*"(?<currentValue>\\d+\\.\\d+\\.\\d+)"'],
+      datasourceTemplate: "github-releases",
+      packageNameTemplate: "opentofu/opentofu",
+      extractVersionTemplate: "^v(?<version>.*)$",
+    },
+  ],
 }
