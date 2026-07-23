@@ -70,6 +70,19 @@ service principals (read-only plan SP, write apply SP) to preserve least privile
 > to `plan_client_id` for symmetry would be a breaking change for every consumer with
 > no privilege benefit — a single-phase workflow has nothing to split.
 
+## Concurrency
+
+Every plan/apply/drift job takes a concurrency group of
+`<owner/repo>-<root_module_folder_relative_path>-tfstate` with `cancel-in-progress: false`,
+so runs touching the **same state file** serialise rather than racing.
+
+The root module is part of the key on purpose. Matrix callers
+(`terraform-azure-workloads` runs one leg per workload) have a separate state file per
+root module and can safely apply in parallel; a repo-wide key made those legs queue
+against each other, and GitHub cancels the older *waiting* run as soon as a second one
+arrives — so a multi-workload push silently applied only one workload. Single-root repos
+key on the `.` default and are unaffected.
+
 ## Credential model (1Password)
 
 Credentials come from **1Password** on cloud runners and from the **runner pod env** on

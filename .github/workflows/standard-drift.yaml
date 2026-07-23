@@ -64,7 +64,12 @@ jobs:
     runs-on: ${{ inputs.runner }}
     environment: ${{ inputs.environment }}
     concurrency:
-      group: ${{ github.repository }}-tfstate
+      # Keyed on the ROOT MODULE, not just the repo: matrix callers (terraform-azure-workloads
+      # runs one leg per workload) have a separate state file per root module, so a
+      # repo-wide group makes independent legs queue against each other — and GitHub
+      # cancels the older *waiting* run when a second one arrives, silently leaving a
+      # workload unapplied. Same root module still serialises, which is the point.
+      group: ${{ github.repository }}-${{ inputs.root_module_folder_relative_path }}-tfstate
       cancel-in-progress: false
     env:
       OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
