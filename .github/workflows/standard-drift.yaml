@@ -83,7 +83,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Setup engine
         id: engine
-        uses: codelooks-com/terraform-workflows/.github/actions/setup-engine@v1.0.2
+        uses: codelooks-com/terraform-workflows/.github/actions/setup-engine@0b19c1acd64c8a0ede42f96f4a61fa8b555c8555 # v1.0.2
         with:
           engine: ${{ inputs.engine }}
           engine_version: ${{ inputs.engine_version }}
@@ -98,7 +98,7 @@ jobs:
             echo "$line" >> "$GITHUB_ENV"
           done <<< "$EXTRA_ENV"
       - name: Load 1Password secrets
-        uses: codelooks-com/terraform-workflows/.github/actions/load-op-secrets@v1.0.2
+        uses: codelooks-com/terraform-workflows/.github/actions/load-op-secrets@0b19c1acd64c8a0ede42f96f4a61fa8b555c8555 # v1.0.2
         with:
           op_secrets: ${{ inputs.op_secrets }}
       - name: Init
@@ -140,7 +140,7 @@ jobs:
           overwrite: true
       - name: Decide
         id: decide
-        uses: codelooks-com/terraform-workflows/.github/actions/drift-decide@v1.0.2
+        uses: codelooks-com/terraform-workflows/.github/actions/drift-decide@0b19c1acd64c8a0ede42f96f4a61fa8b555c8555 # v1.0.2
         with:
           exit_code: ${{ steps.plan.outputs.exit_code }}
       - name: Manage drift issue
