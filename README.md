@@ -8,7 +8,7 @@ One family serves the whole estate — Azure and non-Azure alike:
 
 | File | Purpose |
 |------|---------|
-| `standard-ci.yaml` | PR gate: fmt / init / validate / tflint / plan, with a plan comment on the PR. |
+| `standard-ci.yaml` | PR gate: fmt / init / validate / tflint / plan, with a plan comment on the PR. The comment and the job log carry only the last 60,000 characters of a large plan, so both print resource header counts to reconcile against the `Plan:` line, and the full output is uploaded as the `plan-output-<root module>` artifact (14 days). |
 | `standard-cd.yaml` | Push-to-main plan → apply (split plan/apply environments and client IDs), plus manual `apply`/`destroy` dispatch. |
 | `standard-drift.yaml` | Scheduled `-detailed-exitcode` plan that files/updates a `terraform-drift` issue. |
 
