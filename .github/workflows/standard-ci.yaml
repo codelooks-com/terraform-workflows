@@ -146,16 +146,61 @@ jobs:
       - name: Plan
         id: plan
         shell: bash
+        env:
+          ROOT_MODULE: ${{ inputs.root_module_folder_relative_path }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set +e
           ${{ steps.engine.outputs.bin }} -chdir="${{ inputs.root_module_folder_relative_path }}" plan -input=false -no-color > plan.txt 2>&1
           code=$?
           echo "exit_code=${code}" >> "$GITHUB_OUTPUT"
+
+          # The log and the PR comment only carry the TAIL of a large plan, and root
+          # resources sort first, so they are what gets cut. Never let a tail read as
+          # the whole plan: upload the full file (next step), print the counts a
+          # reviewer needs to reconcile against the Plan: line, and say when it is cut.
+          # Artifact name is scoped to the root module so matrix callers don't collide.
+          slug="$(printf '%s' "${ROOT_MODULE}" | tr -c 'A-Za-z0-9_' '-' | sed 's/^-*//;s/-*$//')"
+          artifact="plan-output-${slug:-root}"
+          echo "artifact=${artifact}" >> "$GITHUB_OUTPUT"
+
+          count() { grep -cE "^[[:space:]]*# .* ($1)" plan.txt; }
+          headers="$(count 'will be created|will be destroyed|must be replaced|will be replaced|will be updated in-place|will be read during apply')"
+          breakdown="$(count 'will be created') create, $(count 'will be updated in-place') update, $(count 'must be replaced|will be replaced') replace, $(count 'will be destroyed') destroy, $(count 'will be read during apply') read"
+          summary="$(grep -m1 -E '^(Plan:|No changes\.)' plan.txt)"
+          bytes="$(wc -c < plan.txt | tr -d ' ')"
+          {
+            echo "${summary:-(no Plan: line in the output)}"
+            echo
+            echo "${headers} resource headers in the full plan: ${breakdown}."
+            if [ "${bytes}" -gt 60000 ]; then
+              echo
+              echo "Plan output truncated to the last 60,000 bytes of ${bytes}; full plan in the ${artifact} artifact of this run: ${RUN_URL}"
+            fi
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ "${bytes}" -gt 60000 ]; then
+            echo "::warning title=Plan output truncated::Only the last 60,000 bytes are shown below (${headers} resource headers total). Full plan: ${artifact} artifact of this run."
+          fi
+          echo "----"
           tail -c 60000 plan.txt
           exit "${code}"
+      - name: Upload full plan output
+        id: upload
+        # Runs whenever the plan step produced a file, including when the plan failed.
+        if: (success() || failure()) && hashFiles('plan.txt') != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ steps.plan.outputs.artifact }}
+          path: plan.txt
+          retention-days: 14
+          if-no-files-found: ignore
+          overwrite: true
       - name: Comment plan on PR
         if: (success() || failure()) && github.event_name == 'pull_request'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          ARTIFACT_NAME: ${{ steps.plan.outputs.artifact }}
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
@@ -163,8 +208,26 @@ jobs:
             let plan = '';
             try { plan = fs.readFileSync('plan.txt', 'utf8'); } catch (e) { plan = '(no plan output captured)'; }
             const truncated = plan.length > 60000 ? plan.slice(-60000) : plan;
+            // Counts come from the FULL plan so a reviewer can reconcile them against
+            // the Plan: line even when the body below is only the tail.
+            const count = (text, kinds) => (text.match(new RegExp(`^\\s*# .* (${kinds})`, 'gm')) || []).length;
+            const all = 'will be created|will be destroyed|must be replaced|will be replaced|will be updated in-place|will be read during apply';
+            const headers = count(plan, all);
+            const breakdown = `${count(plan, 'will be created')} create, ${count(plan, 'will be updated in-place')} update, ${count(plan, 'must be replaced|will be replaced')} replace, ${count(plan, 'will be destroyed')} destroy, ${count(plan, 'will be read during apply')} read`;
+            const summary = (plan.match(/^(Plan:|No changes\.).*$/m) || ['(no Plan: line in the output)'])[0];
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const artifact = process.env.ARTIFACT_URL
+              ? `[\`${process.env.ARTIFACT_NAME}\`](${process.env.ARTIFACT_URL})`
+              : `\`${process.env.ARTIFACT_NAME}\``;
+            const notice = truncated === plan ? '' : `
+            > [!WARNING]
+            > Plan output truncated to the last 60,000 characters — ${headers} resource headers total, ${count(truncated, all)} shown below; full plan in the ${artifact} artifact of [this run](${runUrl}).
+            `;
             const body = `#### OpenTofu/Terraform Plan 📖 \`${{ steps.plan.outcome }}\`
 
+            **${summary}**
+            ${headers} resource headers in the full plan: ${breakdown}.
+            ${notice}
             <details><summary>Show plan</summary>
 
             \`\`\`
