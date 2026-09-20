@@ -10,7 +10,7 @@ One family serves the whole estate — Azure and non-Azure alike:
 |------|---------|
 | `standard-ci.yaml` | PR gate: fmt / init / validate / tflint / plan, with a plan comment on the PR. The comment and the job log carry only the last 60,000 characters of a large plan, so both print resource header counts to reconcile against the `Plan:` line, and the full output is uploaded as the `plan-output-<root module>` artifact (14 days). |
 | `standard-cd.yaml` | Push-to-main plan → apply (split plan/apply environments and client IDs), plus manual `apply`/`destroy` dispatch. |
-| `standard-drift.yaml` | Scheduled `-detailed-exitcode` plan that files/updates a `terraform-drift` issue. |
+| `standard-drift.yaml` | Scheduled `-detailed-exitcode` plan that files/updates a `terraform-drift` issue. The issue body leads with the `Plan:` line and resource header counts, and only carries a slice of a large plan (from the first resource header onward where that fits, else the last 60,000 characters); the full output is uploaded as the `drift-plan-<root module>` artifact (14 days). |
 
 Azure support is declarative only (the `azure_oidc` flag + ID inputs set `ARM_*` env);
 there are no Azure-specific steps. The legacy `azure-ci`/`azure-cd` family was removed

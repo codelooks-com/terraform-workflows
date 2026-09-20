@@ -116,10 +116,28 @@ jobs:
       - name: Plan (detailed exit code)
         id: plan
         shell: bash
+        env:
+          ROOT_MODULE: ${{ inputs.root_module_folder_relative_path }}
         run: |
           set +e
           ${{ steps.engine.outputs.bin }} -chdir="${{ inputs.root_module_folder_relative_path }}" plan -input=false -detailed-exitcode -no-color > plan.txt 2>&1
           echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+
+          # Artifact name scoped to the root module so matrix callers don't collide,
+          # matching standard-ci.yaml's plan-output-<root module> naming.
+          slug="$(printf '%s' "${ROOT_MODULE}" | tr -c 'A-Za-z0-9_' '-' | sed 's/^-*//;s/-*$//')"
+          echo "artifact=drift-plan-${slug:-root}" >> "$GITHUB_OUTPUT"
+      - name: Upload full plan output
+        id: upload
+        # Runs whenever the plan step produced a file, including when the plan failed.
+        if: (success() || failure()) && hashFiles('plan.txt') != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ steps.plan.outputs.artifact }}
+          path: plan.txt
+          retention-days: 14
+          if-no-files-found: ignore
+          overwrite: true
       - name: Decide
         id: decide
         uses: codelooks-com/terraform-workflows/.github/actions/drift-decide@727c83c6357c7fd01ba704650bdb5a6953fac6b0 # v1.0.1
@@ -127,6 +145,9 @@ jobs:
           exit_code: ${{ steps.plan.outputs.exit_code }}
       - name: Manage drift issue
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          ARTIFACT_NAME: ${{ steps.plan.outputs.artifact }}
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
@@ -146,10 +167,38 @@ jobs:
             }
             let plan = '';
             try { plan = fs.readFileSync('plan.txt', 'utf8'); } catch (e) { plan = '(no plan output captured)'; }
-            const truncated = plan.length > 60000 ? plan.slice(-60000) : plan;
+            // Counts come from the FULL plan so a reader can reconcile them against
+            // the Plan: line even when the body below is only part of it.
+            const count = (text, kinds) => (text.match(new RegExp(`^\\s*# .* (${kinds})`, 'gm')) || []).length;
+            const all = 'will be created|will be destroyed|must be replaced|will be replaced|will be updated in-place|will be read during apply';
+            const headers = count(plan, all);
+            const breakdown = `${count(plan, 'will be created')} create, ${count(plan, 'will be updated in-place')} update, ${count(plan, 'must be replaced|will be replaced')} replace, ${count(plan, 'will be destroyed')} destroy, ${count(plan, 'will be read during apply')} read`;
+            const summary = (plan.match(/^(Plan:|No changes\.).*$/m) || ['(no Plan: line in the output)'])[0];
+            // Prefer truncating from the first resource-header marker onward — this
+            // drops the leading "Refreshing state..." noise, which is usually most of
+            // a large plan and never where the drift actually is — before falling back
+            // to a tail slice when even that is still too long (or absent, e.g. a
+            // failed plan with no diff at all).
+            const LIMIT = 60000;
+            const marker = plan.match(/^(OpenTofu|Terraform) will perform the following actions:/m);
+            const fromMarker = marker ? plan.slice(marker.index) : null;
+            const truncated = plan.length <= LIMIT ? plan
+              : (fromMarker && fromMarker.length <= LIMIT) ? fromMarker
+              : plan.slice(-LIMIT);
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const artifact = process.env.ARTIFACT_URL
+              ? `[\`${process.env.ARTIFACT_NAME}\`](${process.env.ARTIFACT_URL})`
+              : `\`${process.env.ARTIFACT_NAME}\``;
+            const notice = truncated === plan ? '' : `
+            > [!WARNING]
+            > Plan output truncated — ${headers} resource headers total, ${count(truncated, all)} shown below; full plan was uploaded as the ${artifact} artifact of [the run that last updated this issue](${runUrl}). Artifacts expire after 14 days, so it may be gone if this issue has been open longer.
+            `;
             const heading = action === 'error' ? '⚠️ Drift check **errored**' : '🌱 **Drift detected**';
             const body = `${heading} on \`${context.sha.slice(0,7)}\` (run ${context.runId}).
 
+            **${summary}**
+            ${headers} resource headers in the full plan: ${breakdown}.
+            ${notice}
             <details><summary>Plan output</summary>
 
             \`\`\`
