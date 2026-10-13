@@ -15,6 +15,24 @@ on:
       runner:
         type: string
         default: ubuntu-latest
+      plan_timeout_minutes:
+        description: >-
+          Plan job timeout in minutes. The slowest successful CD plan across the
+          estate in the last 20 runs per caller was 4.8 minutes (October 2026).
+          Without one, a hung job runs to GitHub's 360-minute default, which on a
+          private repository bills all six hours.
+        type: number
+        default: 15
+      apply_timeout_minutes:
+        description: >-
+          Apply job timeout in minutes. The slowest successful apply was 29.6
+          minutes (September 2026), and vSphere VM builds have run 32 minutes
+          before failing on their own. Killing an apply midway can leave state
+          locked or resources tainted, so keep this generous.
+          Without one, a hung job runs to GitHub's 360-minute default, which on a
+          private repository bills all six hours.
+        type: number
+        default: 100
       root_module_folder_relative_path:
         type: string
         default: "."
@@ -71,6 +89,7 @@ jobs:
   plan:
     name: Plan
     runs-on: ${{ inputs.runner }}
+    timeout-minutes: ${{ inputs.plan_timeout_minutes }}
     environment: ${{ inputs.plan_environment }}
     concurrency:
       # Keyed on the ROOT MODULE, not just the repo: matrix callers (terraform-azure-workloads
@@ -145,6 +164,7 @@ jobs:
     name: Apply
     needs: plan
     runs-on: ${{ inputs.runner }}
+    timeout-minutes: ${{ inputs.apply_timeout_minutes }}
     environment: ${{ inputs.apply_environment }}
     concurrency:
       # Same group key as the plan job above — see the note there.

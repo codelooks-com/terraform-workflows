@@ -15,6 +15,14 @@ on:
       runner:
         type: string
         default: ubuntu-latest
+      timeout_minutes:
+        description: >-
+          Drift job timeout in minutes. The slowest successful drift plan across
+          the estate in the last 20 runs per caller was 24.4 minutes (October 2026).
+          Without one, a hung job runs to GitHub's 360-minute default, which on a
+          private repository bills all six hours.
+        type: number
+        default: 75
       root_module_folder_relative_path:
         type: string
         default: "."
@@ -62,6 +70,7 @@ jobs:
   drift:
     name: Detect drift
     runs-on: ${{ inputs.runner }}
+    timeout-minutes: ${{ inputs.timeout_minutes }}
     environment: ${{ inputs.environment }}
     concurrency:
       # Keyed on the ROOT MODULE, not just the repo: matrix callers (terraform-azure-workloads
