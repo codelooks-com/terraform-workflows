@@ -75,13 +75,12 @@ service principals (read-only plan SP, write apply SP) to preserve least privile
 Each job sets `timeout-minutes` from a `number` input, so a hung job stops well short of
 GitHub's 360-minute default. Callers that pass nothing get the defaults below:
 
-| Input | Default | Notes |
-|-------|---------|-------|
-| `timeout_minutes` | `15` | **`standard-ci`**: the `Validate & Plan` job. |
-| `timeout_minutes` | `75` | **`standard-drift`**: the `Detect drift` job. |
-| `plan_timeout_minutes` | `15` | **`standard-cd`**: the `Plan` job. |
-| `apply_timeout_minutes` | `100` | **`standard-cd`**: the `Apply` job. Keep it generous: killing an apply midway can leave state locked or resources tainted. |
-
+| Input                   | Default | Notes                                                                                                                      |
+| ----------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `timeout_minutes`       | `15`    | **`standard-ci`**: the `Validate & Plan` job.                                                                              |
+| `timeout_minutes`       | `75`    | **`standard-drift`**: the `Detect drift` job.                                                                              |
+| `plan_timeout_minutes`  | `15`    | **`standard-cd`**: the `Plan` job.                                                                                         |
+| `apply_timeout_minutes` | `100`   | **`standard-cd`**: the `Apply` job. Keep it generous: killing an apply midway can leave state locked or resources tainted. |
 Each default is roughly three times the slowest successful run across every caller's
 last 20 runs (October 2026); the input descriptions in each workflow file carry the
 measured figures.
