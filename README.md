@@ -31,14 +31,16 @@ uses: codelooks-com/terraform-workflows/.github/workflows/standard-ci.yaml@v1.0.
 Internal `uses:` references (the composite actions the reusable workflows call) are
 pinned to the release tag itself, so a pinned consumer never executes unpinned code.
 
-**Merging dependency bumps.** Renovate's PRs here (third-party action pins, the OpenTofu
-`engine_version` default, tflint) merge on a green `actionlint` run and nothing more: a merge
-to `main` ships nothing, because every consumer pins a release tag and the internal references
-pin that same tag. The reading that matters happens at release time, when the accumulated bumps
-are read together and the tag is cut by hand (below). `automerge` stays off only so each diff
-gets a glance as it lands; majors (`!` titles) are read properly before merging. Renovate never
-touches this repository's references to itself: they stay on the tag, because the tag is cut
-from the merge commit and a commit cannot pin its own SHA.
+**Merging dependency bumps.** Renovate's PRs here (third-party action pins, the
+OpenTofu `engine_version` default, tflint) merge on a green `actionlint` run and
+nothing more: a merge to `main` ships nothing, because every consumer pins a
+release tag and the internal references pin that same tag. The reading that
+matters happens at release time, when the accumulated bumps are read together
+and the tag is cut by hand (below). `automerge` stays off only so each diff gets
+a glance as it lands; majors (`!` titles) are read properly before merging.
+Renovate never touches this repository's references to itself: they stay on the
+tag, because the tag is cut from the merge commit and a commit cannot pin its
+own SHA.
 
 **Release procedure** (the tag is self-referencing, so order matters):
 
