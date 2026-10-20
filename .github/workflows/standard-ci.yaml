@@ -64,8 +64,9 @@ on:
 # non-OIDC callers don't. A reusable workflow can only DOWNGRADE the caller's
 # token, so hardcoding `id-token: write` makes startup fail for any caller that
 # doesn't grant it (cloudflare/tailscale/nextdns/github). Each caller declares
-# exactly what it needs (CI callers: contents: read + pull-requests: write;
-# Azure additionally grants id-token: write).
+# exactly what it needs (CI callers: contents: read + pull-requests: write +
+# statuses: write for the plan-noop status; Azure additionally grants
+# id-token: write).
 
 jobs:
   plan:
@@ -252,3 +253,47 @@ jobs:
               repo: context.repo.repo,
               body,
             });
+      - name: Post plan-noop status
+        # The verdict Renovate reads: success only for a plan that changes nothing, so a
+        # repository extending the terraform-plan-gated preset merges no-op bumps and holds
+        # the rest for a person. Posted on the PR head (statuses on the merge ref are not
+        # shown on the PR). Requires `statuses: write` from the caller; a POST that fails
+        # fails the job, so a missing grant can never read as a pass.
+        if: (success() || failure()) && github.event_name == 'pull_request'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          ROOT_MODULE: ${{ inputs.root_module_folder_relative_path }}
+          PLAN_EXIT_CODE: ${{ steps.plan.outputs.exit_code }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            // A pure function of the exit code and the plan text, so it can be tested alone.
+            const decide = (code, plan) => {
+              if (code === '' || code === undefined || plan === null) {
+                return ['failure', 'Plan did not run; see the run log'];
+              }
+              if (code !== '0') return ['failure', `Plan failed (exit ${code}); see the run log`];
+              // Conservative on purpose: anything but a clean "No changes." waits for a person,
+              // including forgets, imports and output-only changes (none of which print it).
+              const noChanges = /^No changes\./m.test(plan);
+              const planLine = /^Plan: /m.test(plan);
+              const outputs = /^Changes to Outputs:/m.test(plan);
+              const headers = (plan.match(/^\s*# \S.* (will be|must be|will no longer be) /gm) || []).length;
+              if (noChanges && !planLine && !outputs && headers === 0) {
+                return ['success', 'Plan is a no-op: No changes.'];
+              }
+              return ['pending', 'Plan changes infrastructure; merge by hand'];
+            };
+            const sha = process.env.HEAD_SHA;
+            if (!/^[0-9a-f]{40}$/.test(sha || '')) throw new Error(`No pull request head SHA (got "${sha}")`);
+            const root = process.env.ROOT_MODULE;
+            const statusContext = root && root !== '.' ? `terraform/plan-noop/${root}` : 'terraform/plan-noop';
+            let plan = null;
+            try { plan = fs.readFileSync('plan.txt', 'utf8'); } catch (e) { plan = null; }
+            const [state, description] = decide(process.env.PLAN_EXIT_CODE, plan);
+            const { owner, repo } = context.repo;
+            const target_url = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+            await github.rest.repos.createCommitStatus({ owner, repo, sha, state, context: statusContext, description, target_url });
+            core.info(`${statusContext} = ${state} on ${sha}: ${description}`);

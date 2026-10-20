@@ -8,7 +8,7 @@ One family serves the whole estate — Azure and non-Azure alike:
 
 | File | Purpose |
 |------|---------|
-| `standard-ci.yaml` | PR gate: fmt / init / validate / tflint / plan, with a plan comment on the PR. The comment and the job log carry only the last 60,000 characters of a large plan, so both print resource header counts to reconcile against the `Plan:` line, and the full output is uploaded as the `plan-output-<root module>` artifact (14 days). |
+| `standard-ci.yaml` | PR gate: fmt / init / validate / tflint / plan, with a plan comment on the PR and a `terraform/plan-noop` commit status on the PR head (see below). The comment and the job log carry only the last 60,000 characters of a large plan, so both print resource header counts to reconcile against the `Plan:` line, and the full output is uploaded as the `plan-output-<root module>` artifact (14 days). |
 | `standard-cd.yaml` | Push-to-main plan → apply (split plan/apply environments and client IDs), plus manual `apply`/`destroy` dispatch. |
 | `standard-drift.yaml` | Scheduled `-detailed-exitcode` plan that files/updates a `terraform-drift` issue. The issue body leads with the `Plan:` line and resource header counts, and only carries a slice of a large plan (from the first resource header onward where that fits, else the last 60,000 characters); the full output is uploaded as the `drift-plan-<root module>` artifact (14 days). It also raises a stale state lock (below). |
 
@@ -51,6 +51,31 @@ merge commit and a commit cannot pin its own SHA.
 2. Merge the PR.
 3. Immediately tag the merge commit: `git tag vX.Y.Z <merge-sha> && git push origin vX.Y.Z`.
    The internal refs cannot resolve until the tag exists, so cut it straight after merging.
+
+## The `terraform/plan-noop` status
+
+On a `pull_request` run, `standard-ci` posts a commit status on the PR's head
+commit after the plan. Its context is `terraform/plan-noop`, with
+`/<root_module_folder_relative_path>` appended when the root module is not `.`,
+so matrix legs do not overwrite each other.
+
+| State | When |
+|-------|------|
+| `success` | The plan exited 0, printed `No changes.`, and has no resource headers, no `Plan:` line and no `Changes to Outputs:`. |
+| `pending` | Anything else that planned: creates, updates, replacements, destroys, imports, forgets and output-only changes. Description: "Plan changes infrastructure; merge by hand". |
+| `failure` | The plan failed, or an earlier step stopped it running. |
+
+The status is what Renovate reads for a repository that extends
+`github>LukeEvansTech/renovate-config:terraform-plan-gated`: that preset turns
+automerge on for Terraform updates with `platformAutomerge: false`, so Renovate
+merges only when every status is green, and a `pending` plan stays open for a
+person to read and merge by hand. The status is not a required check, so that
+hand merge needs no admin rights.
+
+Callers must grant `statuses: write` to the CI job. Without it the POST fails
+and the job fails, which holds the PR rather than letting it through. Extend the
+preset only in a repository whose CI already posts the status: a repository that
+gets no status would have nothing holding a changing plan.
 
 ## Stale state lock alert
 
@@ -166,7 +191,7 @@ job requests an `id-token`. The consumer keeps an `azurerm` backend block in its
 # ci.yaml caller
 jobs:
   ci:
-    permissions: { contents: read, pull-requests: write, id-token: write }
+    permissions: { contents: read, pull-requests: write, statuses: write, id-token: write }
     uses: codelooks-com/terraform-workflows/.github/workflows/standard-ci.yaml@v1.0.0
     with:
       engine: opentofu
