@@ -15,7 +15,7 @@ One family serves the whole estate — Azure and non-Azure alike:
 Azure support is declarative only (the `azure_oidc` flag + ID inputs set `ARM_*` env);
 there are no Azure-specific steps. The legacy `azure-ci`/`azure-cd` family was removed
 2026-07-06 after its last consumer (terraform-azure-platform) cut over to `standard-*` —
-it remains in git history and the pre-removal tags if ever needed.
+it remains in Git history and the pre-removal tags if ever needed.
 
 ## Versioning & pinning
 
@@ -64,7 +64,7 @@ All three accept:
 | `subscription_id` | `""` | Azure subscription ID (used when `azure_oidc: true`). |
 | `backend_config` | `""` | Multiline `key=value` list passed to `init` as `-backend-config` flags. For repos with a *partial* backend block (e.g. an empty `backend "azurerm" {}`). Empty ⇒ bare `init`. |
 | `extra_env` | `""` | Multiline `KEY=value` list exported into the job env (via `$GITHUB_ENV`) before `init`/`plan`/`apply`. For provider tuning such as `AZAPI_RETRY_GET_AFTER_PUT_MAX_TIME`. Empty ⇒ no-op. |
-| `environment` | `""` | **`standard-ci` / `standard-drift`**: GitHub Environment to bind the plan/drift job to. Needed when the repo customizes its OIDC subject to require the `environment` claim. Empty ⇒ no environment. (`standard-cd` already has `plan_environment`/`apply_environment`.) |
+| `environment` | `""` | **`standard-ci` / `standard-drift`**: GitHub Environment to bind the plan/drift job to. Needed when the repository customizes its OIDC subject to require the `environment` claim. Empty ⇒ no environment. (`standard-cd` already has `plan_environment`/`apply_environment`.) |
 
 `standard-ci.yaml` / `standard-drift.yaml` also accept `client_id` (the Azure AD app for
 OIDC). `standard-cd.yaml` additionally requires `plan_environment` and `apply_environment`
@@ -158,7 +158,7 @@ jobs:
 them — `repo:<org>/<repo>:pull_request` (ci plan), `repo:<org>/<repo>:environment:<env>`
 (cd plan/apply), and `repo:<org>/<repo>:ref:refs/heads/<default-branch>` (scheduled drift).
 
-## R2 backend block (copy into each consumer repo)
+## R2 backend block (copy into each consumer repository)
 
 ```hcl
 terraform {
@@ -176,7 +176,7 @@ terraform {
 }
 ```
 
-## Onboarding a repo
+## Onboarding a repository
 
 1. Add the R2 backend block (migrate state with `tofu init -migrate-state` if needed).
 2. Add three thin caller workflows (`ci.yaml`, `cd.yaml`, `drift.yaml`) calling the
