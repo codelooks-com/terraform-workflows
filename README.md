@@ -19,7 +19,8 @@ it remains in Git history and the pre-removal tags if ever needed.
 
 ## Versioning & pinning
 
-Consumers pin `uses:` references to a release tag or commit SHA — never `@main`. These
+Consumers pin `uses:` references to a release tag or commit SHA, never `@main` (the two
+Azure repositories still track `main` and are the exception until they are pinned). These
 workflows run with the caller's apply credentials, so an unpinned ref means any push to
 this repo's `main` executes in every apply pipeline in the estate. Renovate (house
 preset) converts tag refs to `SHA # vX.Y.Z` pins and bumps them via PR.
@@ -32,15 +33,16 @@ Internal `uses:` references (the composite actions the reusable workflows call) 
 pinned to the release tag itself, so a pinned consumer never executes unpinned code.
 
 **Merging dependency bumps.** Renovate's PRs here (third-party action pins, the
-OpenTofu `engine_version` default, tflint) merge on a green `actionlint` run and
-nothing more: a merge to `main` ships nothing, because every consumer pins a
-release tag and the internal references pin that same tag. The reading that
-matters happens at release time, when the accumulated bumps are read together
-and the tag is cut by hand (below). `automerge` stays off only so each diff gets
-a glance as it lands; majors (`!` titles) are read properly before merging.
-Renovate never touches this repository's references to itself: they stay on the
-tag, because the tag is cut from the merge commit and a commit cannot pin its
-own SHA.
+OpenTofu `engine_version` default, tflint) merge on a green `actionlint` run
+once the diff has been read; there is no plan to judge them by. For a consumer
+pinned to a tag the merge changes nothing until the next release is cut by hand
+(below), and the release is where the accumulated bumps are read together. Two
+consumers, terraform-azure-platform and terraform-azure-workloads, call these
+workflows from `main` instead, so for them every merge is a deploy: that is the
+reason `automerge` stays off and a human reads each diff. Majors (`!` titles)
+are read properly before merging. Renovate never touches this repository's
+references to itself: they stay on the tag, because the tag is cut from the
+merge commit and a commit cannot pin its own SHA.
 
 **Release procedure** (the tag is self-referencing, so order matters):
 
