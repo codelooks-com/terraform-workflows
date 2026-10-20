@@ -10,7 +10,7 @@ One family serves the whole estate — Azure and non-Azure alike:
 |------|---------|
 | `standard-ci.yaml` | PR gate: fmt / init / validate / tflint / plan, with a plan comment on the PR. The comment and the job log carry only the last 60,000 characters of a large plan, so both print resource header counts to reconcile against the `Plan:` line, and the full output is uploaded as the `plan-output-<root module>` artifact (14 days). |
 | `standard-cd.yaml` | Push-to-main plan → apply (split plan/apply environments and client IDs), plus manual `apply`/`destroy` dispatch. |
-| `standard-drift.yaml` | Scheduled `-detailed-exitcode` plan that files/updates a `terraform-drift` issue. The issue body leads with the `Plan:` line and resource header counts, and only carries a slice of a large plan (from the first resource header onward where that fits, else the last 60,000 characters); the full output is uploaded as the `drift-plan-<root module>` artifact (14 days). |
+| `standard-drift.yaml` | Scheduled `-detailed-exitcode` plan that files/updates a `terraform-drift` issue. The issue body leads with the `Plan:` line and resource header counts, and only carries a slice of a large plan (from the first resource header onward where that fits, else the last 60,000 characters); the full output is uploaded as the `drift-plan-<root module>` artifact (14 days). It also raises a stale state lock (below). |
 
 Azure support is declarative only (the `azure_oidc` flag + ID inputs set `ARM_*` env);
 there are no Azure-specific steps. The legacy `azure-ci`/`azure-cd` family was removed
@@ -51,6 +51,24 @@ merge commit and a commit cannot pin its own SHA.
 2. Merge the PR.
 3. Immediately tag the merge commit: `git tag vX.Y.Z <merge-sha> && git push origin vX.Y.Z`.
    The internal refs cannot resolve until the tag exists, so cut it straight after merging.
+
+## Stale state lock alert
+
+A run that dies mid-plan or mid-apply can leave the state locked, and every later
+plan and apply then fails with `Error acquiring the state lock` until someone
+runs `force-unlock`. `standard-drift` plans with `-lock-timeout=0s`, and when it
+hits that error it reads the lock's ID and creation time. If the lock is over
+an hour old and no other workflow run in the repository is in progress, it
+opens (or updates) one issue labelled `terraform-lock`, titled
+`Terraform state lock stuck: <repo>` (plus ` (<root module>)` when the root is
+not `.`). The issue carries the lock ID and the exact `force-unlock` command,
+and the run fails. It never unlocks anything itself. A later run that acquires
+the lock closes the issue.
+
+Listing in-progress runs needs `actions: read`, so drift callers grant it
+alongside `issues: write`. Without it, or when the lock's age cannot be read,
+no `terraform-lock` issue is raised and the plan error takes the usual path
+(a failed run and an errored drift issue).
 
 ## standard-* inputs
 

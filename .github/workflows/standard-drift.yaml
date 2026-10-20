@@ -64,7 +64,7 @@ on:
 # non-OIDC callers don't. A reusable workflow can only DOWNGRADE the caller's
 # token, so hardcoding `id-token: write` makes startup fail for any caller that
 # doesn't grant it. Each caller declares what it needs (drift callers: contents:
-# read + issues: write).
+# read + issues: write + actions: read, the last for the stale-lock check).
 
 jobs:
   drift:
@@ -129,7 +129,7 @@ jobs:
           ROOT_MODULE: ${{ inputs.root_module_folder_relative_path }}
         run: |
           set +e
-          ${{ steps.engine.outputs.bin }} -chdir="${{ inputs.root_module_folder_relative_path }}" plan -input=false -detailed-exitcode -no-color > plan.txt 2>&1
+          ${{ steps.engine.outputs.bin }} -chdir="${{ inputs.root_module_folder_relative_path }}" plan -input=false -lock-timeout=0s -detailed-exitcode -no-color > plan.txt 2>&1
           echo "exit_code=$?" >> "$GITHUB_OUTPUT"
 
           # Artifact name scoped to the root module so matrix callers don't collide,
@@ -147,12 +147,115 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
           overwrite: true
+      - name: Check for a stale state lock
+        id: lock
+        # A lock left by a killed run blocks every plan and apply until someone runs
+        # force-unlock, and nothing else notices. Raise it as its own issue, with the
+        # command, only when the lock is over an hour old and no other workflow run in
+        # the repository is in progress (one of those may legitimately hold it). Never
+        # unlocks anything itself. Fails closed: if the age or the run list cannot be
+        # read, no unlock advice is given and the plan error takes the normal path.
+        if: (success() || failure()) && steps.plan.outputs.exit_code != ''
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          PLAN_EXIT_CODE: ${{ steps.plan.outputs.exit_code }}
+          ROOT_MODULE: ${{ inputs.root_module_folder_relative_path }}
+          ENGINE: ${{ inputs.engine }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const MAX_AGE_MS = 60 * 60 * 1000;
+            const { owner, repo } = context.repo;
+            const root = process.env.ROOT_MODULE || '.';
+            const label = 'terraform-lock';
+            const title = root === '.' ? `Terraform state lock stuck: ${repo}` : `Terraform state lock stuck: ${repo} (${root})`;
+            let plan = '';
+            try { plan = fs.readFileSync('plan.txt', 'utf8'); } catch (e) { plan = ''; }
+            const existing = await github.rest.issues.listForRepo({ owner, repo, state: 'open', labels: label, per_page: 100 });
+            const open = existing.data.find(i => i.title === title);
+            core.setOutput('stale', 'false');
+
+            if (process.env.PLAN_EXIT_CODE !== '1' || !/Error acquiring the state lock/.test(plan)) {
+              if (open) {
+                await github.rest.issues.createComment({ owner, repo, issue_number: open.number, body: `The drift plan acquired the state lock (run ${context.runId}); closing.` });
+                await github.rest.issues.update({ owner, repo, issue_number: open.number, state: 'closed' });
+              }
+              return;
+            }
+
+            const field = (name) => { const m = plan.match(new RegExp(`^\\s*${name}:[ \\t]*(.*)$`, 'm')); return m ? m[1].trim() : ''; };
+            const id = field('ID');
+            const created = field('Created');
+            if (!/^[A-Za-z0-9-]{8,64}$/.test(id)) {
+              core.warning(`State lock error, but no lock ID could be read; not raising ${label}.`);
+              return;
+            }
+            // e.g. "2026-10-20 10:03:19.587207784 +0000 UTC"
+            const t = created.match(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})(\.\d{1,3})?\d* ([+-]\d{2})(\d{2})/);
+            const createdAt = t ? Date.parse(`${t[1]}T${t[2]}${t[3] || ''}${t[4]}:${t[5]}`) : NaN;
+            if (Number.isNaN(createdAt)) {
+              core.warning(`State lock ${id}: could not read its creation time ("${created}"); not raising ${label}.`);
+              return;
+            }
+            const ageMs = Date.now() - createdAt;
+            const ageMin = Math.floor(ageMs / 60000);
+            if (ageMs < MAX_AGE_MS) {
+              core.info(`State lock ${id} is ${ageMin} minutes old; under an hour, so it may still be live.`);
+              return;
+            }
+            let others;
+            try {
+              const runs = await github.rest.actions.listWorkflowRunsForRepo({ owner, repo, status: 'in_progress', per_page: 100 });
+              others = runs.data.workflow_runs.filter(r => r.id !== context.runId);
+              if (runs.data.total_count > runs.data.workflow_runs.length) others.push({ name: '(more runs than one page)' });
+            } catch (e) {
+              core.warning(`State lock ${id}: could not list workflow runs (${e.message}); the caller needs actions: read. Not raising ${label}.`);
+              return;
+            }
+            if (others.length > 0) {
+              core.info(`State lock ${id} is ${ageMin} minutes old, but ${others.length} other run(s) are in progress (${others.map(r => r.name).join(', ')}); not raising ${label}.`);
+              return;
+            }
+
+            core.setOutput('stale', 'true');
+            const bin = process.env.ENGINE === 'terraform' ? 'terraform' : 'tofu';
+            const chdir = root === '.' ? '' : ` -chdir=${root}`;
+            const command = `${bin}${chdir} force-unlock ${id}`;
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+            const lockInfo = (plan.match(/^Lock Info:\n(?:[ \t]+\S.*\n?)+/m) || ['(lock info not found)'])[0].trimEnd();
+            const body = `🔒 The state for \`${root}\` has been locked for ${ageMin} minutes and no other workflow run in this repository is in progress, so the lock is probably left over from a run that died. Every plan and apply on this state fails until it is released.
+
+            Lock ID: \`${id}\`
+
+            Check nothing is still running against this state (a local plan or apply, a run in another repository), then release it from a checkout of this repository with its backend credentials loaded, after \`init\`:
+
+            \`\`\`sh
+            ${command}
+            \`\`\`
+
+            This workflow never unlocks anything itself.
+
+            \`\`\`
+            ${lockInfo}
+            \`\`\`
+
+            Seen by [drift run ${context.runId}](${runUrl}).`;
+            if (open) {
+              await github.rest.issues.update({ owner, repo, issue_number: open.number, body });
+              await github.rest.issues.createComment({ owner, repo, issue_number: open.number, body: `Still locked (run ${context.runId}): lock \`${id}\`, ${ageMin} minutes old.` });
+            } else {
+              await github.rest.issues.create({ owner, repo, title, labels: [label], body });
+            }
+            core.setFailed(`State lock ${id} is ${ageMin} minutes old with no other run in progress; raised a ${label} issue.`);
       - name: Decide
         id: decide
+        if: success() || failure()
         uses: codelooks-com/terraform-workflows/.github/actions/drift-decide@v1.0.3
         with:
           exit_code: ${{ steps.plan.outputs.exit_code }}
       - name: Manage drift issue
+        if: success() || failure()
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           ARTIFACT_NAME: ${{ steps.plan.outputs.artifact }}
@@ -222,7 +325,7 @@ jobs:
               await github.rest.issues.create({ owner, repo, title, labels: [label], body });
             }
       - name: Notify
-        if: steps.decide.outputs.action != 'none' && env.DRIFT_WEBHOOK != ''
+        if: (success() || failure()) && steps.decide.outputs.action != 'none' && env.DRIFT_WEBHOOK != ''
         shell: bash
         run: |
           curl -fsS -X POST -H 'Content-Type: application/json' \
