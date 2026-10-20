@@ -176,13 +176,16 @@ jobs:
             const open = existing.data.find(i => i.title === title);
             core.setOutput('stale', 'false');
 
-            if (process.env.PLAN_EXIT_CODE !== '1' || !/Error acquiring the state lock/.test(plan)) {
+            const code = process.env.PLAN_EXIT_CODE;
+            if (code === '0' || code === '2') {
+              // Only a plan that completed proves the lock can be taken.
               if (open) {
                 await github.rest.issues.createComment({ owner, repo, issue_number: open.number, body: `The drift plan acquired the state lock (run ${context.runId}); closing.` });
                 await github.rest.issues.update({ owner, repo, issue_number: open.number, state: 'closed' });
               }
               return;
             }
+            if (code !== '1' || !/Error acquiring the state lock/.test(plan)) return;
 
             const field = (name) => { const m = plan.match(new RegExp(`^\\s*${name}:[ \\t]*(.*)$`, 'm')); return m ? m[1].trim() : ''; };
             const id = field('ID');
@@ -220,7 +223,8 @@ jobs:
 
             core.setOutput('stale', 'true');
             const bin = process.env.ENGINE === 'terraform' ? 'terraform' : 'tofu';
-            const chdir = root === '.' ? '' : ` -chdir=${root}`;
+            const q = (v) => /^[A-Za-z0-9_./=-]+$/.test(v) ? v : `'${v.replace(/'/g, `'\\''`)}'`;
+            const chdir = root === '.' ? '' : ` ${q(`-chdir=${root}`)}`;
             const command = `${bin}${chdir} force-unlock ${id}`;
             const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
             const lockInfo = (plan.match(/^Lock Info:\n(?:[ \t]+\S.*\n?)+/m) || ['(lock info not found)'])[0].trimEnd();
@@ -250,12 +254,12 @@ jobs:
             core.setFailed(`State lock ${id} is ${ageMin} minutes old with no other run in progress; raised a ${label} issue.`);
       - name: Decide
         id: decide
-        if: success() || failure()
+        if: (success() || failure()) && steps.plan.outputs.exit_code != ''
         uses: codelooks-com/terraform-workflows/.github/actions/drift-decide@v1.0.3
         with:
           exit_code: ${{ steps.plan.outputs.exit_code }}
       - name: Manage drift issue
-        if: success() || failure()
+        if: (success() || failure()) && steps.plan.outputs.exit_code != ''
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           ARTIFACT_NAME: ${{ steps.plan.outputs.artifact }}
