@@ -15,11 +15,12 @@ One family serves the whole estate — Azure and non-Azure alike:
 Azure support is declarative only (the `azure_oidc` flag + ID inputs set `ARM_*` env);
 there are no Azure-specific steps. The legacy `azure-ci`/`azure-cd` family was removed
 2026-07-06 after its last consumer (terraform-azure-platform) cut over to `standard-*` —
-it remains in git history and the pre-removal tags if ever needed.
+it remains in Git history and the pre-removal tags if ever needed.
 
 ## Versioning & pinning
 
-Consumers pin `uses:` references to a release tag or commit SHA — never `@main`. These
+Consumers pin `uses:` references to a release tag or commit SHA, never `@main` (the two
+Azure repositories still track `main` and are the exception until they are pinned). These
 workflows run with the caller's apply credentials, so an unpinned ref means any push to
 this repo's `main` executes in every apply pipeline in the estate. Renovate (house
 preset) converts tag refs to `SHA # vX.Y.Z` pins and bumps them via PR.
@@ -30,6 +31,18 @@ uses: codelooks-com/terraform-workflows/.github/workflows/standard-ci.yaml@v1.0.
 
 Internal `uses:` references (the composite actions the reusable workflows call) are
 pinned to the release tag itself, so a pinned consumer never executes unpinned code.
+
+**Merging dependency bumps.** Renovate's PRs here (third-party action pins, the
+OpenTofu `engine_version` default, tflint) merge on a green `actionlint` run
+once the diff has been read; there is no plan to judge them by. For a consumer
+pinned to a tag the merge changes nothing until the next release is cut by hand
+(below), and the release is where the accumulated bumps are read together. Two
+consumers, terraform-azure-platform and terraform-azure-workloads, call these
+workflows from `main` instead, so for them every merge is a deploy: that is the
+reason `automerge` stays off and a human reads each diff. Majors (`!` titles)
+are read properly before merging. Renovate never touches this repository's
+references to itself: they stay on the tag, because the tag is cut from the
+merge commit and a commit cannot pin its own SHA.
 
 **Release procedure** (the tag is self-referencing, so order matters):
 
@@ -55,7 +68,7 @@ All three accept:
 | `subscription_id` | `""` | Azure subscription ID (used when `azure_oidc: true`). |
 | `backend_config` | `""` | Multiline `key=value` list passed to `init` as `-backend-config` flags. For repos with a *partial* backend block (e.g. an empty `backend "azurerm" {}`). Empty ⇒ bare `init`. |
 | `extra_env` | `""` | Multiline `KEY=value` list exported into the job env (via `$GITHUB_ENV`) before `init`/`plan`/`apply`. For provider tuning such as `AZAPI_RETRY_GET_AFTER_PUT_MAX_TIME`. Empty ⇒ no-op. |
-| `environment` | `""` | **`standard-ci` / `standard-drift`**: GitHub Environment to bind the plan/drift job to. Needed when the repo customizes its OIDC subject to require the `environment` claim. Empty ⇒ no environment. (`standard-cd` already has `plan_environment`/`apply_environment`.) |
+| `environment` | `""` | **`standard-ci` / `standard-drift`**: GitHub Environment to bind the plan/drift job to. Needed when the repository customizes its OIDC subject to require the `environment` claim. Empty ⇒ no environment. (`standard-cd` already has `plan_environment`/`apply_environment`.) |
 
 `standard-ci.yaml` / `standard-drift.yaml` also accept `client_id` (the Azure AD app for
 OIDC). `standard-cd.yaml` additionally requires `plan_environment` and `apply_environment`
@@ -149,7 +162,7 @@ jobs:
 them — `repo:<org>/<repo>:pull_request` (ci plan), `repo:<org>/<repo>:environment:<env>`
 (cd plan/apply), and `repo:<org>/<repo>:ref:refs/heads/<default-branch>` (scheduled drift).
 
-## R2 backend block (copy into each consumer repo)
+## R2 backend block (copy into each consumer repository)
 
 ```hcl
 terraform {
@@ -167,7 +180,7 @@ terraform {
 }
 ```
 
-## Onboarding a repo
+## Onboarding a repository
 
 1. Add the R2 backend block (migrate state with `tofu init -migrate-state` if needed).
 2. Add three thin caller workflows (`ci.yaml`, `cd.yaml`, `drift.yaml`) calling the

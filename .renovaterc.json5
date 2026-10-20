@@ -14,10 +14,21 @@
 
   packageRules: [
     {
-      // This repo is the estate's apply-pipeline supply chain: every bump here
-      // ships into every consumer's CI/CD on the next release tag. Never automerge.
+      // This repo is the estate's apply-pipeline supply chain. A pinned consumer
+      // sees a bump only at the next release tag, but the two Azure repositories
+      // call these workflows from main, so for them a merge is a deploy (README,
+      // "Versioning & pinning"). Patch and minor bumps merge on a green actionlint
+      // run after a human has read the diff; automerge stays off for that reason.
       matchPackageNames: ["*"],
       automerge: false,
+    },
+    {
+      // The reusable workflows call this repository's own composite actions pinned
+      // to the release tag, and the release procedure rewrites that tag by hand. A
+      // SHA pin can never be kept current (the tag is cut from the merge commit,
+      // which cannot carry its own SHA), so Renovate leaves these references alone.
+      matchPackageNames: ["codelooks-com/terraform-workflows"],
+      enabled: false,
     },
   ],
 
