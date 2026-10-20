@@ -249,6 +249,12 @@ jobs:
               await github.rest.issues.update({ owner, repo, issue_number: open.number, body });
               await github.rest.issues.createComment({ owner, repo, issue_number: open.number, body: `Still locked (run ${context.runId}): lock \`${id}\`, ${ageMin} minutes old.` });
             } else {
+              // Issue creation rejects a label that does not exist yet, so make sure it does.
+              try {
+                await github.rest.issues.createLabel({ owner, repo, name: label, color: 'b60205', description: 'A Terraform state lock is stuck and needs force-unlock' });
+              } catch (e) {
+                if (e.status !== 422) throw e;
+              }
               await github.rest.issues.create({ owner, repo, title, labels: [label], body });
             }
             core.setFailed(`State lock ${id} is ${ageMin} minutes old with no other run in progress; raised a ${label} issue.`);
@@ -329,7 +335,7 @@ jobs:
               await github.rest.issues.create({ owner, repo, title, labels: [label], body });
             }
       - name: Notify
-        if: (success() || failure()) && steps.decide.outputs.action != 'none' && env.DRIFT_WEBHOOK != ''
+        if: (success() || failure()) && steps.decide.outputs.action != '' && steps.decide.outputs.action != 'none' && env.DRIFT_WEBHOOK != ''
         shell: bash
         run: |
           curl -fsS -X POST -H 'Content-Type: application/json' \
