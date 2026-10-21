@@ -13,7 +13,9 @@ runs:
       shell: bash
       env:
         OP_SECRETS: ${{ inputs.op_secrets }}
-      run: |
+      # Writing to $GITHUB_ENV is the point of this step: load-secrets-action resolves op:// refs it
+      # finds in the environment. Each line is checked below, so only NAME=op://... can be staged.
+      run: | # zizmor: ignore[github-env]
         set -euo pipefail
         if [ -z "${OP_SERVICE_ACCOUNT_TOKEN:-}" ] || [ -z "$(printf '%s' "${OP_SECRETS}" | tr -d '[:space:]')" ]; then
           echo "skip=true" >> "$GITHUB_OUTPUT"
@@ -25,6 +27,17 @@ runs:
         while IFS= read -r line; do
           trimmed="$(printf '%s' "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
           [ -z "$trimmed" ] && continue
+          name="${trimmed%%=*}"
+          if [[ ! "$trimmed" =~ ^[A-Za-z_][A-Za-z0-9_]*=op://[^[:cntrl:]]+$ ]]; then
+            echo "::error::op_secrets line for '${name}' is not NAME=op://vault/item/field"
+            exit 1
+          fi
+          case "$name" in
+            PATH | BASH_ENV | ENV | NODE_OPTIONS | LD_* | GITHUB_* | RUNNER_* | ACTIONS_* | OP_*)
+              echo "::error::op_secrets may not set reserved variable '${name}'"
+              exit 1
+              ;;
+          esac
           echo "$trimmed" >> "$GITHUB_ENV"
         done <<< "$OP_SECRETS"
     - name: Load secrets from 1Password
