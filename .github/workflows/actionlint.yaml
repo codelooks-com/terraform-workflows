@@ -1,13 +1,18 @@
 ---
 name: actionlint
+# .github/actions/** is in the paths so a PR that only touches a composite action
+# still gets a check row to gate its merge on. actionlint parses workflow files only,
+# so for those PRs this re-lints the workflows that ship with the action change.
 on:
   pull_request:
     paths:
-      - '.github/workflows/**'
+      - ".github/workflows/**"
+      - ".github/actions/**"
   push:
     branches: [main]
     paths:
-      - '.github/workflows/**'
+      - ".github/workflows/**"
+      - ".github/actions/**"
 permissions:
   contents: read
 jobs:
@@ -17,5 +22,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: actionlint
         uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7 # v2.2.0
