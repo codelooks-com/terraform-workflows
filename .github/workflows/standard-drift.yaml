@@ -270,16 +270,23 @@ jobs:
         env:
           ARTIFACT_NAME: ${{ steps.plan.outputs.artifact }}
           ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+          ROOT_MODULE: ${{ inputs.root_module_folder_relative_path }}
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
             const action = '${{ steps.decide.outputs.action }}';
             const label = 'terraform-drift';
-            const title = `Terraform drift detected: ${context.repo.repo}`;
+            // One issue per root module, as for the lock issue above: a repository with several
+            // roots (a matrix, or one root per box) must not have one root's clean run close
+            // another root's drift. A root of '.' keeps the original title.
+            const root = process.env.ROOT_MODULE || '.';
+            const base = `Terraform drift detected: ${context.repo.repo}`;
+            const title = root === '.' ? base : `${base} (${root})`;
             const { owner, repo } = context.repo;
-            const existing = await github.rest.issues.listForRepo({ owner, repo, state: 'open', labels: label });
-            const open = existing.data.find(i => i.title === title);
+            // Paginated: with one issue per root, a repository can hold more than one page.
+            const existing = await github.paginate(github.rest.issues.listForRepo, { owner, repo, state: 'open', labels: label, per_page: 100 });
+            const open = existing.find(i => i.title === title);
             if (action === 'none') {
               if (open) {
                 await github.rest.issues.createComment({ owner, repo, issue_number: open.number, body: 'Drift cleared ✅ — closing.' });
