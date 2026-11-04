@@ -75,12 +75,12 @@ jobs:
     timeout-minutes: ${{ inputs.timeout_minutes }}
     environment: ${{ inputs.environment }}
     concurrency:
-      # Keyed on the ROOT MODULE, not just the repo: matrix callers (terraform-azure-workloads
-      # runs one leg per workload) have a separate state file per root module, so a
-      # repo-wide group makes independent legs queue against each other — and GitHub
-      # cancels the older *waiting* run when a second one arrives, silently leaving a
-      # workload unapplied. Same root module still serialises, which is the point.
-      group: ${{ github.repository }}-${{ inputs.root_module_folder_relative_path }}-tfstate
+      # Its own group per PR and root module, NOT the `-tfstate` group standard-cd and
+      # standard-drift share. GitHub keeps one pending job per group and cancels the older
+      # one when another arrives, so sharing it let a PR plan cancel a CD apply that was
+      # waiting its turn. The plan runs with -lock=false (below), so it never contends with
+      # an apply for the state lock either.
+      group: ${{ github.repository }}-${{ inputs.root_module_folder_relative_path }}-ci-${{ github.event.pull_request.number || github.ref }}
       cancel-in-progress: false
     env:
       OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
@@ -161,7 +161,9 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set +e
-          ${{ steps.engine.outputs.bin }} -chdir="${{ inputs.root_module_folder_relative_path }}" plan -input=false -no-color > plan.txt 2>&1
+          # -lock=false: a PR plan is a preview and never writes state, so it takes no lock
+          # and cannot block CD. A preview taken mid-apply shows the pre-apply state.
+          ${{ steps.engine.outputs.bin }} -chdir="${{ inputs.root_module_folder_relative_path }}" plan -input=false -lock=false -no-color > plan.txt 2>&1
           code=$?
           echo "exit_code=${code}" >> "$GITHUB_OUTPUT"
 
