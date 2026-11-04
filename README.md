@@ -144,9 +144,19 @@ measured figures.
 
 ## Concurrency
 
-Every plan/apply/drift job takes a concurrency group of
+Every CD plan/apply and drift job takes a concurrency group of
 `<owner/repo>-<root_module_folder_relative_path>-tfstate` with `cancel-in-progress: false`,
 so runs touching the **same state file** serialise rather than racing.
+
+`standard-ci` is not in that group. GitHub keeps one pending job per group and
+cancels the older one when another arrives, so while CI shared it, a PR plan
+cancelled a CD apply that was waiting its turn (terraform-azure-platform,
+2026-11-02). CI now groups per PR and root module (`…-ci-<PR number>`) and plans
+with `-lock=false`: a PR plan never writes state, so it takes no lock and cannot
+block an apply, at the cost that a preview taken mid-apply shows the pre-apply
+state. Drift stays in the group, since it needs the lock for its stale-lock
+check, so a scheduled drift run arriving while a CD apply waits can still cancel
+it. That needs two CD runs and the daily drift run to coincide.
 
 The root module is part of the key on purpose. Matrix callers
 (`terraform-azure-workloads` runs one leg per workload) have a separate state file per
